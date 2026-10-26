@@ -1,0 +1,38 @@
+// Starter config for apps/api (src/index.ts = templates/worker.ts). Replace every <placeholder>.
+// Create resources first: `wrangler d1 create <app>-db-staging`, `wrangler kv namespace create ...`, `wrangler r2 bucket create ...`
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "<app>-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // Local dev uses these bindings; deploys must pick an env (--env staging | --env production).
+  "d1_databases": [{ "binding": "DB", "database_name": "<app>-db-dev", "database_id": "<id>", "migrations_dir": "migrations" }],
+  "kv_namespaces": [{ "binding": "KV", "id": "<id>" }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "<app>-files-dev" }],
+  "vars": { "APP_ENV": "dev", "BETTER_AUTH_URL": "http://localhost:8787", "WEB_ORIGIN": "http://localhost:5173" },
+
+  "env": {
+    "staging": {
+      "name": "<app>-api-staging",
+      "routes": [{ "pattern": "api-staging.<domain>", "custom_domain": true }],
+      "d1_databases": [{ "binding": "DB", "database_name": "<app>-db-staging", "database_id": "<id>", "migrations_dir": "migrations" }],
+      "kv_namespaces": [{ "binding": "KV", "id": "<id>" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "<app>-files-staging" }],
+      "vars": { "APP_ENV": "staging", "BETTER_AUTH_URL": "https://api-staging.<domain>", "WEB_ORIGIN": "https://staging.<domain>" }
+    },
+    "production": {
+      "name": "<app>-api",
+      "routes": [{ "pattern": "api.<domain>", "custom_domain": true }],
+      "d1_databases": [{ "binding": "DB", "database_name": "<app>-db", "database_id": "<id>", "migrations_dir": "migrations" }],
+      "kv_namespaces": [{ "binding": "KV", "id": "<id>" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "<app>-files" }],
+      "vars": { "APP_ENV": "production", "BETTER_AUTH_URL": "https://api.<domain>", "WEB_ORIGIN": "https://<domain>" }
+    }
+  }
+  // Secrets (never in this file): wrangler secret put BETTER_AUTH_SECRET --env staging
+  //   OPENROUTER_API_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, SUPERWALL_WEBHOOK_SECRET,
+  //   APPLE_CLIENT_SECRET, GOOGLE_CLIENT_SECRET, TINYBIRD_TOKEN
+}
