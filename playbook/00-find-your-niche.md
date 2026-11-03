@@ -57,7 +57,7 @@ Score each 1–5. Build if the total is 25+ of 35 and nothing scores 1.
 | Domain | Study | AI's job | Watch out for |
 |---|---|---|---|
 | **Nutrition & fitness** | Cal AI, Ladder, MacroFactor | Vision → macros, adaptive plans | No medical claims; honest accuracy; eating-disorder sensitivity |
-| **Health scanners** | Yuka, PictureThis | OCR + vision + knowledge base | Cite sources; careful health claims |
+| **Health scanners** | Yuka, PictureThis | OCR + vision + knowledge base | Cite sources; be careful with health claims |
 | **Learning & languages** | Duolingo, Speak, Photomath | Tutor, conversation, grading | Minors (COPPA); academic integrity; seasonality |
 | **Faith & mindfulness** | Hallow, Finch | Personalized reflections, Q&A | Accuracy, respect; vulnerable users |
 | **Focus & productivity** | Opal, Structured, Tiimo | Brain dump → schedule | Screen Time APIs limit what you can build |
