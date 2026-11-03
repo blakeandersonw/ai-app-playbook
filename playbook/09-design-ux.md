@@ -36,7 +36,7 @@ Screens: **[Mobbin](https://mobbin.com)**, **[Screens Design](https://screensdes
 6. **Pick one reference per screen**, not per app.
 7. **Rebuild in your design system** and compare side by side (SwiftUI previews or a phone-width browser) until it matches.
 
-Copy patterns, not assets: no logos, illustrations, icons, characters, copywritten text, or brand names.
+Copy patterns, not assets: no logos, illustrations, icons, characters, copyrighted text, or brand names.
 
 ## Principles
 
