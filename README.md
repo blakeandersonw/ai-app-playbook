@@ -53,6 +53,7 @@ Good apps help people get fit, focus, learn, or feel calmer, and people pay for 
 | Analytics + errors | [Tinybird](https://www.tinybird.co) |
 | Clients | SwiftUI for iOS, React Native or Kotlin for Android, React + Vite for web |
 | Building | [Claude Code](https://claude.com/claude-code), or [OpenCode](https://opencode.ai) + DeepSeek |
+| code review | [arcanist](https://tryarcanist.com) |
 
 **Don't use:** Vercel, Netlify, Lovable, Bolt, v0, Replit hosting, Bubble, FlutterFlow, Firebase, Supabase, Clerk, Auth0, Sentry, PostHog, Next.js, ORMs.
 
