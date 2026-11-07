@@ -7,6 +7,8 @@
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // /health answers with the version id, so the deploy rollout can tell a new version from the old (playbook/14).
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
 
   // Local dev uses these bindings; deploys must pick an env (--env staging | --env production).
   "d1_databases": [{ "binding": "DB", "database_name": "<app>-db-dev", "database_id": "<id>", "migrations_dir": "migrations" }],

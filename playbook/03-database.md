@@ -32,10 +32,10 @@ const meals = await env.DB
 wrangler d1 migrations create DB add_meals           # creates migrations/000N_add_meals.sql
 wrangler d1 migrations apply DB --local               # dev
 wrangler d1 migrations apply DB --env staging --remote
-wrangler d1 migrations apply DB --env production --remote   # humans only
+wrangler d1 migrations apply DB --env production --remote   # humans only, or CI (14)
 ```
 
-Every schema change is a migration in git. Never hand-edit production.
+Every schema change is a migration in git. Never hand-edit production. Migrations run before the new code and aren't rolled back, so make them expand-only: add tables and columns; don't rename or drop what deployed code reads ([14](14-shipping.md)).
 
 ## Starter tables
 

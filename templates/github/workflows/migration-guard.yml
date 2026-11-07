@@ -1,0 +1,40 @@
+# Copy to .github/workflows/migration-guard.yml (playbook/14-shipping.md).
+# A PR's D1 migrations must be additive, and applied ones never edited: production keeps serving the
+# old Worker while and after they run, and D1 never undoes one. The `destructive-migration` label lets
+# a deliberate one through; deploy-api.yml checks again before staging and production, against the
+# migrations each database has not applied yet.
+name: Migration guard
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+    paths:
+      - 'apps/api/migrations/**'
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: New migrations are additive
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          ALLOW: ${{ contains(github.event.pull_request.labels.*.name, 'destructive-migration') }}
+        run: |
+          paths=(migrations)
+          mapfile -t added < <(git diff --name-only --diff-filter=A "$BASE...HEAD" -- "${paths[@]}" | grep '\.sql$' | sed 's|^apps/api/||' || true)
+          mapfile -t edited < <(git diff --name-only --diff-filter=MDR "$BASE...HEAD" -- "${paths[@]}" | grep '\.sql$' | sed 's|^apps/api/||' || true)
+          allow=()
+          [[ "$ALLOW" == true ]] && allow=(--allow)
+          bun scripts/migration-guard.ts ${allow[@]+"${allow[@]}"} ${added[@]+"${added[@]}"} --edited ${edited[@]+"${edited[@]}"}
