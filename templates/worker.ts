@@ -12,7 +12,8 @@ export default {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          return Response.json({ ok: true, env: env.APP_ENV }); // the deploy smoke check reads env (playbook/14)
+          // The deploy rollout tells a new version from the old by these (playbook/14).
+          return Response.json({ ok: true, env: env.APP_ENV, version: env.CF_VERSION_METADATA?.id });
         case "POST /webhooks/stripe":
           return handleStripeWebhook(request, env);
         case "POST /webhooks/superwall":

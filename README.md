@@ -104,9 +104,9 @@ Per 1,000 users per month.
 | 11 | [Distribution](playbook/11-distribution.md) | Short-form, creators, DMs, ASO |
 | 12 | [Costs](playbook/12-costs.md) | Numbers and sources |
 | 13 | [Security & compliance](playbook/13-security-privacy-compliance.md) | Spend caps, privacy, App Store review |
-| 14 | [Shipping](playbook/14-shipping.md) | Dependabot + Claude review, deploys tested with the iOS app |
+| 14 | [Shipping](playbook/14-shipping.md) | Dependabot + Claude review, deploys tested with the iOS app, gradual rollout |
 
-**Templates:** [`worker.ts`](templates/worker.ts) · [`auth.ts`](templates/auth.ts) · [`wrangler.jsonc`](templates/wrangler.jsonc) · [`AGENTS.app.md`](templates/AGENTS.app.md) · [`dev.vars.example`](templates/dev.vars.example) · [`github/`](templates/github/) · [`LiveAPICompatibilityTests.swift`](templates/LiveAPICompatibilityTests.swift)
+**Templates:** [`worker.ts`](templates/worker.ts) · [`auth.ts`](templates/auth.ts) · [`wrangler.jsonc`](templates/wrangler.jsonc) · [`AGENTS.app.md`](templates/AGENTS.app.md) · [`dev.vars.example`](templates/dev.vars.example) · [`github/`](templates/github/) · [`scripts/`](templates/scripts/) · [`LiveAPICompatibilityTests.swift`](templates/LiveAPICompatibilityTests.swift)
 
 ---
 

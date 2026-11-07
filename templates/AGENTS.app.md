@@ -39,9 +39,10 @@ $<30>/year, <3>-day free trial. Benchmarks (estimates): ~30% trial start, ~30% t
 4. Stream AI. Log every AI call (`ai_call`) with cost.
 5. Use existing design tokens and components (`<path>`).
 6. Every user-visible feature emits an event.
-7. Schema changes are SQL migrations, staging first.
+7. Schema changes are SQL migrations, staging first, additive only: the migration guard fails a destructive one unless the PR has the `destructive-migration` label.
 8. Never touch production data, deploy to production, or commit secrets.
 9. Decisions go in `docs/decisions/NNNN-title.md`.
+10. API PRs get a Claude review (`api-review.yml`). A red `gate` check means blocking concerns: fix them and push. If the review is wrong, add the `review-override` label and say why in a PR comment.
 
 ## Done means
 

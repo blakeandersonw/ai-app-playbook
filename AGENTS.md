@@ -50,7 +50,7 @@ Walk the human through every phase in order. Do **[AGENT]** steps yourself. Give
 | 12 Launch | [13 · Security & compliance](playbook/13-security-privacy-compliance.md), [14 · Shipping](playbook/14-shipping.md) |
 | 13–14 Grow | [11 · Distribution](playbook/11-distribution.md), [12 · Costs](playbook/12-costs.md) |
 
-Templates in [`templates/`](templates/): `AGENTS.app.md`, `worker.ts`, `auth.ts`, `wrangler.jsonc`, `dev.vars.example`, `github/` (Dependabot + deploy workflows), `LiveAPICompatibilityTests.swift`. Prefer linked docs over memory. Cloudflare's agent index: <https://developers.cloudflare.com/llms.txt>.
+Templates in [`templates/`](templates/): `AGENTS.app.md`, `worker.ts`, `auth.ts`, `wrangler.jsonc`, `dev.vars.example`, `github/` (Dependabot, deploy, migration guard and PR review workflows), `scripts/` (rollout, smoke test, migration guard), `LiveAPICompatibilityTests.swift`. Prefer linked docs over memory. Cloudflare's agent index: <https://developers.cloudflare.com/llms.txt>.
 
 ---
 
@@ -142,7 +142,7 @@ Copy into the app's `docs/progress.md`. Update it and show it after every phase.
 ### Phase 12: Launch
 
 - [ ] **[AGENT]** Chapter 13 compliance table, store listing (chapter 11 ASO checklist), privacy labels.
-- [ ] **[AGENT]** Chapter 14: Dependabot with the Claude check, and `deploy-api.yml` (staging, the iOS app's live tests, production with rollback). Tag each App Store build `ios/<version>-<build>`.
+- [ ] **[AGENT]** Chapter 14: Dependabot with the Claude check, the migration guard, the Claude review of API PRs, and `deploy-api.yml` (staging, the iOS app's live tests, a gradual production rollout that goes back on errors). Tag each App Store build `ios/<version>-<build>`.
 - [ ] **[HUMAN]** Publish Privacy Policy and Terms, upload screenshots, submit for review, add the chapter 14 secrets, merge to `main` so CI deploys production.
 - **Done when:** the app is approved and the production health check is green.
 

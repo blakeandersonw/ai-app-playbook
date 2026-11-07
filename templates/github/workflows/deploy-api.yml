@@ -1,19 +1,29 @@
 # Copy to .github/workflows/deploy-api.yml and replace every <placeholder> (playbook/14-shipping.md).
 # Deploys the API Worker on every push to main that changes it:
 #   unit        bun run check && bun test
-#   staging     D1 migrations, then the Worker, on api-staging.<domain>
+#   staging     the migration guard, D1 migrations, then the same gradual rollout as production
+#               (short, so every run proves the rollout, its analytics and the token before production)
 #   versions    the iOS versions to test: the newest build of each of the last LIVE_API_VERSIONS
 #               versions, from ios/<version>-<build> tags (or this commit before the first release)
 #   live        each of those versions' own networking code (its tag) runs today's live tests
 #               against staging, on a GitHub Mac runner
-#   production  only if every version passed: D1 migrations, the Worker, a smoke check, and a
-#               rollback to the previous Worker if the smoke check fails
-# Migrations reach production before the code and are never rolled back, so each one must work with
-# the Worker already running (add columns and tables; never rename or drop what deployed code reads).
+#   production  only from main and only if every version passed: the migration guard, a D1 Time
+#               Travel bookmark (restore command in the job summary), D1 migrations, then
+#               apps/api/scripts/rollout.ts: the new version at 0% answering probes and an account
+#               smoke test through a version override, ROLLOUT_STEPS of real traffic judged on
+#               Cloudflare's per-version analytics, then 100%. Any failure, or a cancelled run, puts
+#               100% back on the previous version.
+# Nobody approves a step: a failing step stops the run and production keeps what it had. Want an
+# approval anyway? Add required reviewers to the `production` environment.
+# Migrations reach production before the code, and the old version keeps serving during the rollout
+# and after a rollback, so each migration must work with the Worker already running (add columns and
+# tables; never rename or drop what deployed code reads). The migration guard enforces that unless
+# the PR has the `destructive-migration` label.
 # Only the steps that run wrangler get the Cloudflare token: never `bun install`, the tests or Xcode.
-# Secrets: CLOUDFLARE_API_TOKEN (Cloudflare's "Edit Cloudflare Workers" template plus D1: Edit,
-# and Queues: Edit if you use Queues) and CLOUDFLARE_ACCOUNT_ID.
-# Want a human to approve production? Add required reviewers to the `production` environment.
+# Secrets: CLOUDFLARE_API_TOKEN (Cloudflare's "Edit Cloudflare Workers" template plus D1: Edit and
+# Account Analytics: Read, and Queues: Edit if you use Queues) and CLOUDFLARE_ACCOUNT_ID.
+# Needs apps/api/scripts/{rollout,smoke,migration-guard}.ts (templates/scripts) and /health returning
+# { ok, env, version } (templates/worker.ts, `version_metadata` in templates/wrangler.jsonc).
 name: Deploy API
 
 on:
@@ -35,11 +45,24 @@ concurrency:
 
 permissions:
   contents: read
+  pull-requests: read # the migration guard reads the merged PR's labels
 
 env:
   LIVE_API_VERSIONS: 2
   STAGING_URL: https://api-staging.<domain>
   PRODUCTION_URL: https://api.<domain>
+  STAGING_WORKER: <app>-api-staging   # wrangler.jsonc env.staging.name
+  PRODUCTION_WORKER: <app>-api        # wrangler.jsonc env.production.name
+  PRODUCTION_DB: <app>-db             # D1 database_name in env.production
+  # Rollout thresholds (apps/api/scripts/rollout.ts). At low traffic a 10% step sees only a handful
+  # of real requests: the 0% probes catch a version that can't answer at all, 10% limits who meets a
+  # subtle bug first, and 50% gives the watch enough requests to judge. Raise the minutes or lower
+  # the percentages as traffic grows.
+  ROLLOUT_STEPS: '10:5,50:5'         # percent:minutes of real traffic on the new version, then 100%
+  ROLLOUT_MAX_ERRORS: 1              # roll back only above this many bad invocations (5xx or a thrown error)…
+  ROLLOUT_MAX_RATE_DELTA: 0.01       # …and when the new version's bad rate is over 1 point above the previous one's
+  ROLLOUT_PROBE_SECONDS: 60          # probes through the version override, and an analytics check, this often
+  ROLLOUT_ANALYTICS_LAG_SECONDS: 180 # Cloudflare's analytics trail by a minute or two; judge the window after this
   XCODE_PROJECT: <App>.xcodeproj               # in apps/ios
   XCODE_SCHEME: <App>
   LIVE_TESTS_DIR: apps/ios/<App>Tests/LiveAPI   # holds LiveAPICompatibilityTests.swift
@@ -61,7 +84,7 @@ jobs:
   staging:
     needs: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment:
       name: staging
       url: ${{ env.STAGING_URL }}
@@ -74,15 +97,31 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: bun install --frozen-lockfile
-      - name: Migrations and Worker (staging)
+      - name: Destructive migrations (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          bunx wrangler d1 migrations apply DB --env staging --remote
-          bunx wrangler deploy --env staging
-      - name: Staging answers
-        run: curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "$STAGING_URL/health"
+          GH_TOKEN: ${{ github.token }}
+        run: ../../.github/scripts/migration-guard.sh staging
+      - name: Migrations (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bunx wrangler d1 migrations apply DB --env staging --remote
+      - name: Gradual rollout (staging)
+        timeout-minutes: 15
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ROLLOUT_STEPS: '50:1' # staging has no users: one short step proves the split and the watch
+          ROLLOUT_ANALYTICS_LAG_SECONDS: 60
+        run: bun scripts/rollout.ts --env staging --worker "$STAGING_WORKER" --url "$STAGING_URL" --tag "${GITHUB_SHA::12}" --message "$(git log -1 --format=%s)"
+      - name: Back to the previous version (staging)
+        if: failure() || cancelled()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun scripts/rollout.ts --env staging --worker "$STAGING_WORKER" --restore
 
   versions:
     needs: staging
@@ -180,8 +219,10 @@ jobs:
 
   production:
     needs: live
+    # A dispatch from another branch tests it on staging but never ships it.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     environment:
       name: production
       url: ${{ env.PRODUCTION_URL }}
@@ -194,27 +235,44 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
       - run: bun install --frozen-lockfile
-      - name: Migrations and Worker (production)
+      - name: Destructive migrations (production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+        run: ../../.github/scripts/migration-guard.sh production
+      - name: D1 Time Travel bookmark
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          bunx wrangler d1 migrations apply DB --env production --remote
-          bunx wrangler deploy --env production
-      - name: Production answers, or roll back
+          # The point to go back to if a migration damages data. Restoring also undoes every write
+          # since, so it is a human decision, never automatic.
+          bookmark=$(bunx wrangler d1 time-travel info "$PRODUCTION_DB" --env production --json | jq -er .bookmark)
+          echo "$PRODUCTION_DB: $bookmark"
+          {
+            echo "### D1 before this deploy's migrations"
+            echo
+            echo "Restore only by hand, after deciding to lose every write since:"
+            echo
+            echo '```sh'
+            echo "cd apps/api && bunx wrangler d1 time-travel restore $PRODUCTION_DB --env production --bookmark=$bookmark"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Migrations (production)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # Only routes that need no account, so the check never creates production data and never
-          # fails on a 401: the Worker answers as production (templates/worker.ts /health returns
-          # APP_ENV), and Better Auth answers a request with no session.
-          check() {
-            curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "$PRODUCTION_URL/health" | jq -e '.ok == true and .env == "production"' >/dev/null &&
-            curl -fsS --retry 3 --retry-delay 3 --retry-all-errors "$PRODUCTION_URL/api/auth/get-session" >/dev/null
-          }
-          if ! check; then
-            echo "::error::$PRODUCTION_URL failed its smoke check; rolling back to the previous Worker"
-            bunx wrangler rollback --env production --message "deploy-api smoke check failed" -y
-            exit 1
-          fi
+        run: bunx wrangler d1 migrations apply DB --env production --remote
+      - name: Gradual rollout (production)
+        timeout-minutes: 30
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun scripts/rollout.ts --env production --worker "$PRODUCTION_WORKER" --url "$PRODUCTION_URL" --tag "${GITHUB_SHA::12}" --message "$(git log -1 --format=%s)"
+      - name: Back to the previous version (production)
+        if: failure() || cancelled()
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bun scripts/rollout.ts --env production --worker "$PRODUCTION_WORKER" --restore
