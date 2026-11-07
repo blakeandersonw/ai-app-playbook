@@ -1,0 +1,220 @@
+# Copy to .github/workflows/deploy-api.yml and replace every <placeholder> (playbook/14-shipping.md).
+# Deploys the API Worker on every push to main that changes it:
+#   unit        bun run check && bun test
+#   staging     D1 migrations, then the Worker, on api-staging.<domain>
+#   versions    the iOS versions to test: the newest build of each of the last LIVE_API_VERSIONS
+#               versions, from ios/<version>-<build> tags (or this commit before the first release)
+#   live        each of those versions' own networking code (its tag) runs today's live tests
+#               against staging, on a GitHub Mac runner
+#   production  only if every version passed: D1 migrations, the Worker, a smoke check, and a
+#               rollback to the previous Worker if the smoke check fails
+# Migrations reach production before the code and are never rolled back, so each one must work with
+# the Worker already running (add columns and tables; never rename or drop what deployed code reads).
+# Only the steps that run wrangler get the Cloudflare token: never `bun install`, the tests or Xcode.
+# Secrets: CLOUDFLARE_API_TOKEN (Cloudflare's "Edit Cloudflare Workers" template plus D1: Edit,
+# and Queues: Edit if you use Queues) and CLOUDFLARE_ACCOUNT_ID.
+# Want a human to approve production? Add required reviewers to the `production` environment.
+name: Deploy API
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/api/**'
+      - 'bun.lock'
+      - 'package.json'
+      - 'apps/ios/<App>Tests/LiveAPI/**'
+      - '.github/scripts/live-api-account.sh'
+      - '.github/workflows/deploy-api.yml'
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits rather than cancelling one halfway.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  LIVE_API_VERSIONS: 2
+  STAGING_URL: https://api-staging.<domain>
+  PRODUCTION_URL: https://api.<domain>
+  XCODE_PROJECT: <App>.xcodeproj               # in apps/ios
+  XCODE_SCHEME: <App>
+  LIVE_TESTS_DIR: apps/ios/<App>Tests/LiveAPI   # holds LiveAPICompatibilityTests.swift
+  LIVE_TESTS: <App>Tests/LiveAPICompatibilityTests
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun test
+
+  staging:
+    needs: unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: ${{ env.STAGING_URL }}
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - name: Migrations and Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          bunx wrangler d1 migrations apply DB --env staging --remote
+          bunx wrangler deploy --env staging
+      - name: Staging answers
+        run: curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "$STAGING_URL/health"
+
+  versions:
+    needs: staging
+    runs-on: ubuntu-latest
+    outputs:
+      refs: ${{ steps.pick.outputs.refs }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: pick
+        name: Newest build of each recent version
+        run: |
+          # ios/1.4.0-87 → version 1.4.0, build 87. Highest build per version, newest versions first.
+          refs=$(git tag -l 'ios/*' \
+            | sed -E 's|^ios/(.+)-([0-9]+)$|\1 \2 &|' \
+            | sort -k2,2nr | awk '!seen[$1]++ {print $3}' \
+            | head -n "$LIVE_API_VERSIONS" | jq -R . | jq -sc .)
+          # Before the first release there is no tag: test this commit's app code.
+          [ "$refs" != "[]" ] || refs=$(jq -nc --arg sha "$GITHUB_SHA" '[$sha]')
+          echo "Testing $refs"
+          echo "refs=$refs" >> "$GITHUB_OUTPUT"
+
+  live:
+    needs: versions
+    runs-on: xcode-27 # a GitHub-hosted Mac with the Xcode your app builds with
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.versions.outputs.refs) }}
+    name: live (${{ matrix.ref }})
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: That version's app code, with today's live tests
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          cp -R "$LIVE_TESTS_DIR" "$RUNNER_TEMP/LiveAPI"
+          cp .github/scripts/live-api-account.sh "$RUNNER_TEMP/"
+          git switch --detach "$REF"
+          rm -rf "$LIVE_TESTS_DIR"
+          cp -R "$RUNNER_TEMP/LiveAPI" "$LIVE_TESTS_DIR"
+          # Anything else your iOS build needs, e.g. a gitignored config from its example:
+          # cp apps/ios/Config/Local.xcconfig.example apps/ios/Config/Local.xcconfig
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - name: Install wrangler
+        working-directory: apps/api
+        run: bun install --frozen-lockfile
+      - name: Pro test account on staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          API_DIR: ${{ github.workspace }}/apps/api
+        run: |
+          "$RUNNER_TEMP/live-api-account.sh" "$STAGING_URL" > "$RUNNER_TEMP/account"
+          token=$(sed -n 's/^TOKEN=//p' "$RUNNER_TEMP/account")
+          echo "::add-mask::$token"
+          echo "LIVE_USER_ID=$(sed -n 's/^USER_ID=//p' "$RUNNER_TEMP/account")" >> "$GITHUB_ENV"
+          echo "LIVE_TOKEN=$token" >> "$GITHUB_ENV"
+      - name: Simulator
+        run: |
+          # The newest general iOS runtime (runner images can also carry device-only runtimes that
+          # `simctl create` can't use with a normal iPhone), and an iPhone it supports.
+          runtimes=$(xcrun simctl list runtimes -j)
+          pick='[.runtimes[] | select(.platform == "iOS" and .isAvailable and (.identifier | test("SimRuntime[.]iOS-[0-9]+-[0-9]+$")))] | last'
+          runtime=$(jq -r "$pick | .identifier" <<<"$runtimes")
+          device=$(jq -r "$pick | [.supportedDeviceTypes[] | select(.productFamily == \"iPhone\")] | (map(select(.name == \"iPhone 17\")) + .) | first | .identifier" <<<"$runtimes")
+          echo "iOS runtime $runtime, device $device"
+          id=$(xcrun simctl create live-api "$device" "$runtime")
+          [[ "$id" =~ ^[0-9A-F-]{36}$ ]] || { echo "::error::simulator not created: $id"; exit 1; }
+          echo "SIMULATOR=$id" >> "$GITHUB_ENV"
+      - name: Live API tests (${{ matrix.ref }})
+        working-directory: apps/ios
+        env:
+          # xcodebuild passes TEST_RUNNER_<NAME> to the tests as <NAME>.
+          TEST_RUNNER_LIVE_API_URL: ${{ env.STAGING_URL }}
+          TEST_RUNNER_LIVE_PRO_USER_ID: ${{ env.LIVE_USER_ID }}
+          TEST_RUNNER_LIVE_PRO_TOKEN: ${{ env.LIVE_TOKEN }}
+        run: |
+          # Blank any third-party SDK keys here (e.g. MY_PAYWALL_API_KEY=) so the tests only reach your API.
+          set -o pipefail
+          xcodebuild test -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR" \
+            -only-testing:"$LIVE_TESTS" 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" \
+            | grep -E '(error:|✘|✔|Test run|recorded an issue)' || true
+          grep -q 'TEST SUCCEEDED' "$RUNNER_TEMP/xcodebuild.log"
+      - name: Delete the test account
+        if: always() && env.LIVE_TOKEN != ''
+        run: '"$RUNNER_TEMP/live-api-account.sh" --delete "$STAGING_URL" "$LIVE_TOKEN"'
+
+  production:
+    needs: live
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ env.PRODUCTION_URL }}
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - run: bun install --frozen-lockfile
+      - name: Migrations and Worker (production)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          bunx wrangler d1 migrations apply DB --env production --remote
+          bunx wrangler deploy --env production
+      - name: Production answers, or roll back
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Only routes that need no account, so the check never creates production data and never
+          # fails on a 401: the Worker answers as production (templates/worker.ts /health returns
+          # APP_ENV), and Better Auth answers a request with no session.
+          check() {
+            curl -fsS --retry 5 --retry-delay 3 --retry-all-errors "$PRODUCTION_URL/health" | jq -e '.ok == true and .env == "production"' >/dev/null &&
+            curl -fsS --retry 3 --retry-delay 3 --retry-all-errors "$PRODUCTION_URL/api/auth/get-session" >/dev/null
+          }
+          if ! check; then
+            echo "::error::$PRODUCTION_URL failed its smoke check; rolling back to the previous Worker"
+            bunx wrangler rollback --env production --message "deploy-api smoke check failed" -y
+            exit 1
+          fi

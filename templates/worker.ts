@@ -12,7 +12,7 @@ export default {
 
       switch (`${request.method} ${url.pathname}`) {
         case "GET /health":
-          return Response.json({ ok: true });
+          return Response.json({ ok: true, env: env.APP_ENV }); // the deploy smoke check reads env (playbook/14)
         case "POST /webhooks/stripe":
           return handleStripeWebhook(request, env);
         case "POST /webhooks/superwall":

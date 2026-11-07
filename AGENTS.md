@@ -29,7 +29,7 @@ Walk the human through every phase in order. Do **[AGENT]** steps yourself. Give
 4. **Do not use:** Vercel, Netlify, Lovable, Bolt, v0, Replit (hosting), Bubble, FlutterFlow, Firebase, Supabase, Heroku, Render, Railway, AWS Amplify, Clerk, Auth0, Sentry, PostHog, Next.js, Hono, Drizzle, Prisma. If the stack can't do something, stop and ask.
 5. Ask before adding a dependency. Prefer platform APIs (fetch, SQL, CSS variables, SwiftUI).
 6. All server logic runs on Cloudflare. Keys never ship in clients.
-7. Staging first. Never touch production data or run production deploys or migrations.
+7. Staging first. Never touch production data or run production deploys or migrations by hand; production gets them only through CI (chapter 14).
 8. Before saying done: run checks and tests, and look at the running app.
 9. Build fast (chapter 01): core loop end to end on day 1, fake what isn't built, copy flows from references, ship to TestFlight daily, park other ideas in `docs/later.md`.
 
@@ -47,10 +47,10 @@ Walk the human through every phase in order. Do **[AGENT]** steps yourself. Give
 | 8 Payments | [07 · Payments & pricing](playbook/07-payments-pricing.md) |
 | 9 Analytics | [08 · Analytics & errors](playbook/08-analytics-observability.md) |
 | 11 Retention | [10 · Retention](playbook/10-retention.md) |
-| 12 Launch | [13 · Security & compliance](playbook/13-security-privacy-compliance.md) |
+| 12 Launch | [13 · Security & compliance](playbook/13-security-privacy-compliance.md), [14 · Shipping](playbook/14-shipping.md) |
 | 13–14 Grow | [11 · Distribution](playbook/11-distribution.md), [12 · Costs](playbook/12-costs.md) |
 
-Templates in [`templates/`](templates/): `AGENTS.app.md`, `worker.ts`, `auth.ts`, `wrangler.jsonc`, `dev.vars.example`. Prefer linked docs over memory. Cloudflare's agent index: <https://developers.cloudflare.com/llms.txt>.
+Templates in [`templates/`](templates/): `AGENTS.app.md`, `worker.ts`, `auth.ts`, `wrangler.jsonc`, `dev.vars.example`, `github/` (Dependabot + deploy workflows), `LiveAPICompatibilityTests.swift`. Prefer linked docs over memory. Cloudflare's agent index: <https://developers.cloudflare.com/llms.txt>.
 
 ---
 
@@ -142,7 +142,8 @@ Copy into the app's `docs/progress.md`. Update it and show it after every phase.
 ### Phase 12: Launch
 
 - [ ] **[AGENT]** Chapter 13 compliance table, store listing (chapter 11 ASO checklist), privacy labels.
-- [ ] **[HUMAN]** Publish Privacy Policy and Terms, upload screenshots, submit for review, run the production deploy (agent prepares commands and a rollback plan).
+- [ ] **[AGENT]** Chapter 14: Dependabot with the Claude check, and `deploy-api.yml` (staging, the iOS app's live tests, production with rollback). Tag each App Store build `ios/<version>-<build>`.
+- [ ] **[HUMAN]** Publish Privacy Policy and Terms, upload screenshots, submit for review, add the chapter 14 secrets, merge to `main` so CI deploys production.
 - **Done when:** the app is approved and the production health check is green.
 
 ### Phase 13: First 1,000 downloads

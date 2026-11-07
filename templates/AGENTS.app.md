@@ -29,7 +29,7 @@ $<30>/year, <3>-day free trial. Benchmarks (estimates): ~30% trial start, ~30% t
 | New migration | `wrangler d1 migrations create DB <name>` |
 | Apply migrations (staging) | `wrangler d1 migrations apply DB --env staging --remote` |
 | Deploy staging | `bun run deploy:staging` |
-| Deploy production | `bun run deploy:production` (**humans only**) |
+| Deploy production | automatic on push to `main` via `.github/workflows/deploy-api.yml` (playbook/14). By hand: `bun run deploy:production` (**humans only**) |
 
 ## Rules
 

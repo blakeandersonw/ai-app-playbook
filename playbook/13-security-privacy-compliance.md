@@ -13,7 +13,7 @@
 6. Validate input. SQL only via `prepare().bind()`.
 7. Uploads: presigned R2 URLs with size and type limits.
 8. Model-read content is data. Acting tools need user confirmation.
-9. Few dependencies, pinned, updated.
+9. Few dependencies, pinned, updated: Dependabot with a cooldown, majors reviewed by a human ([14](14-shipping.md)).
 
 ## Privacy
 
